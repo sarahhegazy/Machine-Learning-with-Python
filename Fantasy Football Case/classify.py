@@ -3,7 +3,6 @@
 """
 Created on Sun Dec  2 19:17:10 2018
 
-@author: ingridkasbah
 """
 from scipy import stats
 from sklearn.metrics import fbeta_score, accuracy_score
