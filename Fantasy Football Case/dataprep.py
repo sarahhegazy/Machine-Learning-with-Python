@@ -3,7 +3,6 @@
 """
 Created on Sun Dec  2 19:53:15 2018
 
-@author: ingridkasbah
 """
 
 from scipy import stats
