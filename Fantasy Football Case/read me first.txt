@@ -1,0 +1,6 @@
+DataPrep: reads the data and prepares it for modeling. Data prep also includes visualization
+Choosing_classification: goes through the process of testing several models and ultimately choosing the best one. 
+Classify: runs the chosen classifier with the highest accuracy
+Main: runs the whole code to get the predicted labels
+ 
+A pdf file to view the code for choosing and testing several models
