@@ -1,0 +1,208 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+library(RODBC)
+library(ggplot2)
+```
+```{r}
+db = odbcConnect("mysql_server_64", uid="root", pwd="root")
+q = "USE ma_charity_full"
+```
+
+```{r}
+# create features query
+query = "
+SELECT 
+a.campaign_id,
+b.duration,
+COUNT(a.action_date)/ b.n_days as number_of_solicitations_per_day,
+b.date_first_donation,
+QUARTER(b.date_first_donation) as quarter,
+b.date_last_donation,
+b.n_days,
+(b.number_of_responses/COUNT(a.action_date))/b.n_days as conversion_rate,
+(b.number_of_responses) /b.n_days as n_responses_per_day ,
+b.total_donations /b.n_days as n_donations_per_day,
+b.unique_customers /b.n_days as unique_cust_per_day,
+b.avg_return as avg_return,
+SUM(b.amount)/b.n_days as avg_amount_per_day,
+b.number_of_different_messages
+
+FROM actions a
+INNER JOIN
+(SELECT campaign_id, amount,
+MIN(act_date) as date_first_donation,
+MAX(act_date) as date_last_donation,
+
+COUNT(act_date) as number_of_responses,
+DATEDIFF(MAX(act_date), MIN(act_date)) as n_days,
+SUM(amount) as total_donations,
+DATEDIFF(MAX(act_date), MIN(act_date))/365 as duration,
+SUM(amount)/COUNT(act_date) as avg_return,
+COUNT(DISTINCT(contact_id)) as unique_customers,
+COUNT(DISTINCT(message_id)) as number_of_different_messages
+FROM acts
+WHERE (act_type_id like 'DO')
+GROUP BY campaign_id) as b
+ON b.campaign_id = a.campaign_id
+
+
+GROUP BY campaign_id
+ORDER BY b.duration"
+
+u = sqlQuery(db, query)
+u
+```
+
+
+```{r}
+#compute distances without dates columns
+library(dplyr)
+library(distances)
+
+e = select(u, -c(4,6))
+x=distances(e, id_variable = 'campaign_id', dist_variables = NULL,
+normalize = NULL, weights = NULL)
+indices = nearest_neighbor_search(x,10,query_indices=5)
+camp_list = e[indices,]$campaign_id
+camp_list
+
+```
+
+```{r}
+#Time series query for top 4 neighbors with at least 120 days and create index for date
+query = "SELECT campaign_id, act_date, month(act_date) as month, year(act_date) as year, amount as amount FROM acts WHERE campaign_id ='C173' AND act_type_id = 'DO' GROUP BY act_date ORDER BY act_date LIMIT 120"
+d = sqlQuery(db, query)
+d$index = rownames(d)
+d
+
+query = "SELECT campaign_id, act_date, month(act_date) as month, year(act_date) as year, amount as amount FROM acts WHERE campaign_id ='C158' AND act_type_id = 'DO' GROUP BY act_date ORDER BY act_date LIMIT 120"
+q = sqlQuery(db, query)
+q$index = rownames(q)
+q
+
+query = "SELECT campaign_id, act_date, month(act_date) as month, year(act_date) as year, amount as amount FROM acts WHERE campaign_id ='C170' AND act_type_id = 'DO' GROUP BY act_date ORDER BY act_date LIMIT 120"
+w = sqlQuery(db, query)
+w$index = rownames(w)
+w
+
+query = "SELECT campaign_id, act_date, month(act_date) as month, year(act_date) as year, amount as amount FROM acts WHERE campaign_id ='C90' AND act_type_id = 'DO' GROUP BY act_date ORDER BY act_date LIMIT 120"
+b = sqlQuery(db, query)
+b$index = rownames(b)
+b
+
+```
+```{r}
+#query target campaign 
+query = "SELECT campaign_id, act_date, month(act_date) as month, year(act_date) as year, amount as amount FROM acts WHERE campaign_id ='C182' AND act_type_id = 'DO' GROUP BY act_date ORDER BY act_date LIMIT 120"
+t = sqlQuery(db, query)
+t$index = rownames(t)
+t
+
+```
+
+```{r}
+# merge two times series, three times series, four times series depending on the model you want (simply comment out the merges you don't need or leave them all to get the four times series)
+new<-merge(q,d, all.x=TRUE, all.y=TRUE)
+new<-merge(new,w, all.x=TRUE, all.y=TRUE)
+#new <- merge(new,b, all.x=TRUE, all.y=TRUE)
+new$index <- as.numeric(as.character(new$index))
+#remove anomalies 
+new <- new[!new$amount >=(1000),]
+
+
+colnames(new) <- c("campaign_id", "act_date", "month", "year", "Amount", "Day")
+new
+
+```
+```{r}
+
+#plot the predictor campaigns and fit a local regression Loess
+
+gr = ggplot(data = new, aes(x = Day, y = Amount, group_by(campaign_id))) +geom_line(aes(linetype=campaign_id, color=campaign_id))+
+geom_point(aes(color=campaign_id))+ scale_x_continuous(breaks = seq(0, 160, by = 20))+ geom_smooth(method='loess', span = 0.1, formula = y ~ log(x), fullrange = TRUE, level=0.95)
+theme(legend.position="right")
+
+print(gr+ggtitle("Time Series of Similar Campaigns To C182 Based on Clustering"))
+
+```
+```{r}
+attach(new)
+```
+```{r}
+# Create the Loess Fit 
+y <- new$Amount
+x <- new$Day
+mod1=loess(y~x,span=0.05, model= TRUE)
+mod2=loess(y~x,span=0.1, model= TRUE)
+mod3=loess(y~x,span=0.2, model= TRUE)
+
+xfit=seq(from=min(x),to=max(x),length.out=100)
+yfit1=predict(mod1,newdata=xfit)
+yfit2=predict(mod2,newdata=xfit)
+yfit3=predict(mod3,newdata=xfit)
+plot(x,y)
+points(xfit,yfit1,type="l",lwd=2,col="red")
+points(xfit,yfit2,type="l",lwd=2,col="blue")
+points(xfit,yfit3,type="l",lwd=2,col="forestgreen")
+legend("topleft",c(paste("span=",c(0.05,0.1,0.2))), lwd=2,lty=1, col=c("red","blue","forestgreen"))
+title(main= "Loess Fit with Different Span Values", xlab = "Day", ylab="Donation Amount")
+```
+
+```{r}
+#Extract Predictions from fitted Loess, here we chose model to keep S0.05 and S0.2
+library(dplyr)
+predictions <- select(new, c(6))
+predictions$s05 <- mod1$fitted
+#predictions$s1 <- mod2$fitted
+predictions$s2 <- mod3$fitted
+predictions <- predictions[c(1:120),]
+predictions <- rowr::cbind.fill(predictions, t$amount, fill= NA)
+colnames(predictions) <- c("Day","loess_s0.05", "Loess_S0.2","Target")
+
+```
+```{r}
+#reshape  predicitions dataframe 
+library(reshape2)
+pred <-predictions
+pred<-melt(pred, id.vars = c("Day"))
+
+colnames(pred) <- c("Day", "variable", "Amount")
+pred
+```
+
+```{r}
+#plot target campaign and the predictions
+library(ggplot2)
+gr = ggplot(data = pred, aes(x = Day, y = Amount, group_by(variable))) +geom_line(aes(linetype=variable, color=variable))+
+geom_point(aes(color=variable))+ geom_vline(xintercept=40, )
+
+
+print(gr+ggtitle("Time Series Forecast of New Campaign C182 Using C158, C173 and C170"))
+```
+
+```{r}
+library(Metrics)
+#computing errors
+s0.05 <- list(as.numeric(as.character(predictions[1:41,2])))
+s0.2 <- list(as.numeric(as.character(predictions[1:41,3])))
+tar_e <- list(as.numeric(as.character(predictions[1:41,4])))
+
+
+mae(tar_e, s0.05)
+#decided to compute the errors on excel
+write.csv(predictions, "predictions3.csv")
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
