@@ -3,7 +3,6 @@
 """
 Created on Sun Dec  2 19:24:05 2018
 
-@author: ingridkasbah
 """
 
 #Note that this scipt only uses the model
