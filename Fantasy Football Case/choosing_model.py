@@ -3,17 +3,8 @@
 """
 Created on Sat Dec  1 23:10:31 2018
 
-@author: ingridkasbah
 """
 
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Dec  2 19:53:15 2018
-
-@author: ingridkasbah
-"""
 
 from scipy import stats
 from sklearn.metrics import fbeta_score, accuracy_score
